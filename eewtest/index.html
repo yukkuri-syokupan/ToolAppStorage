@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>緊急地震速報</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+  body {
+    font-family: 'Noto Sans JP', 'Helvetica', sans-serif;
+    margin: 0; padding: 0;
+    background-color: #fdfaf6; /* 柔らかいベージュ */
+    color: #333;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    transition: background-color 0.3s;
+  }
+
+  .card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 2em;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+    margin: 1em;
+  }
+
+  button {
+    padding: 0.5em 1.2em;
+    font-size: 1em;
+    border: none;
+    border-radius: 6px;
+    background-color: #5a8dee;
+    color: white;
+    cursor: pointer;
+    margin-top: 1em;
+    transition: background 0.3s;
+  }
+  button:hover { background-color: #4a7cd1; }
+
+  input {
+    padding: 0.5em;
+    font-size: 1em;
+    width: 80%;
+    margin-top: 0.5em;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+  }
+
+  #infoBtn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: none;
+    border: none;
+    font-size: 1.3em;
+    cursor: pointer;
+    color: #555;
+  }
+
+  #credit {
+    font-size: 0.85em;
+    color: #555;
+    margin-top: 1em;
+    display: none;
+    text-align: left;
+  }
+
+  #countdown {
+    font-size: 1.5em;
+    margin-top: 1em;
+    font-weight: bold;
+    color: #555;
+  }
+
+  /* 赤点滅（落ち着いた赤） */
+  @keyframes redBlink {
+    0%,100% { background-color: #ff6b6b; }
+    50% { background-color: #ff9999; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 開始画面 -->
+<div id="startScreen" class="card">
+  <h2>緊急地震速報</h2>
+  <p>開始するには画面をクリックしてください</p>
+  <button id="startBtn">開始</button>
+</div>
+
+<!-- 地域入力画面 -->
+<div id="regionScreen" class="card" style="display:none;">
+  <h2>通知したい地域を入力</h2>
+  <input type="text" id="regionInput" placeholder="例：東京都">
+  <br>
+  <button id="saveRegionBtn">保存して進む</button>
+</div>
+
+<!-- メイン画面 -->
+<div id="mainScreen" class="card" style="display:none;">
+  <h2>緊急地震速報</h2>
+  <div id="status">最新の地震情報を取得中…</div>
+  <div id="countdown">更新まであと 5 秒</div>
+</div>
+
+<audio id="alertSound" src="/alert.mp3"></audio>
+<button id="infoBtn"><i class="fa fa-info-circle"></i></button>
+<div id="credit" class="card">
+  <strong>クレジット</strong><br>
+  音声提供: 音読さん<br>
+  API提供: ydits.net
+</div>
+
+<script>
+const apiUrl = "https://api.ydits.net/test/vxse43";
+let alerted = false;
+let alertTime = null;
+const updateInterval = 5;
+let remaining = updateInterval;
+
+const startScreen = document.getElementById('startScreen');
+const regionScreen = document.getElementById('regionScreen');
+const mainScreen = document.getElementById('mainScreen');
+const regionInput = document.getElementById('regionInput');
+
+document.getElementById('startBtn').onclick = () => {
+  startScreen.style.display = 'none';
+  regionScreen.style.display = 'block';
+  const savedRegion = localStorage.getItem('eewRegion');
+  if(savedRegion) regionInput.value = savedRegion;
+};
+
+document.getElementById('saveRegionBtn').onclick = () => {
+  const region = regionInput.value.trim();
+  if(region){
+    localStorage.setItem('eewRegion', region);
+  }
+  regionScreen.style.display = 'none';
+  mainScreen.style.display = 'block';
+};
+
+document.getElementById('infoBtn').onclick = () => {
+  const creditDiv = document.getElementById('credit');
+  creditDiv.style.display = creditDiv.style.display === 'none' ? 'block' : 'none';
+};
+
+async function checkEarthquake() {
+  try {
+    const res = await fetch(apiUrl);
+    const data = await res.json();
+    const regionFilter = localStorage.getItem('eewRegion') || '';
+
+    if(data.isEew && data.report && data.report.earthquake){
+      const eq = data.report.earthquake;
+      if(!regionFilter || eq.hypocenterName.includes(regionFilter)){
+        if(!alerted){
+          alerted = true;
+          alertTime = eq.originTime;
+
+          document.getElementById('status').innerHTML = `
+            <strong>地震速報！</strong><br>
+            発生地: ${eq.hypocenterName}<br>
+            最大震度: ${eq.intensity}<br>
+            マグニチュード: ${eq.magnitude}<br>
+            深さ: ${eq.depth} km<br>
+            発生時刻: ${alertTime}
+          `;
+
+          document.body.style.animation = 'redBlink 1s infinite';
+          document.getElementById('alertSound').play().catch(err=>console.log(err));
+        }
+      }
+    } else {
+      if(!alerted){
+        document.getElementById('status').textContent = "現在、地震速報はありません。";
+        document.body.style.backgroundColor = '#fdfaf6';
+        document.body.style.animation = '';
+      }
+    }
+  } catch(err){
+    console.error(err);
+    document.getElementById('status').textContent = "地震情報取得エラー";
+  }
+}
+
+function updateCountdown(){
+  remaining--;
+  if(remaining<=0) remaining = updateInterval;
+  document.getElementById('countdown').textContent = `更新まであと ${remaining} 秒`;
+}
+
+setInterval(checkEarthquake, updateInterval*1000);
+setInterval(updateCountdown, 1000);
+checkEarthquake();
+</script>
+
+</body>
+</html>
